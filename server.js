@@ -467,12 +467,25 @@ const pendingChallenges = new Map();
 // Active game rooms
 const gameRooms = new Map();
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
     const userId = req.url.split('?userId=')[1];
     
     if (userId) {
         clients.set(userId, ws);
         console.log(`User ${userId} connected via WebSocket`);
+        
+        // Update user status to online in database
+        try {
+            await User.findByIdAndUpdate(userId, {
+                'profile.status': 'online'
+            });
+            console.log(`User ${userId} status set to online`);
+            
+            // Broadcast user status change to all connected clients
+            broadcastUserStatusChange(userId, 'online');
+        } catch (error) {
+            console.error('Error updating user status:', error);
+        }
         
         ws.on('message', (message) => {
             try {
@@ -483,14 +496,37 @@ wss.on('connection', (ws, req) => {
             }
         });
         
-        ws.on('close', () => {
+        ws.on('close', async () => {
             clients.delete(userId);
             console.log(`User ${userId} disconnected`);
+            
+            // Update user status to offline in database
+            try {
+                await User.findByIdAndUpdate(userId, {
+                    'profile.status': 'offline'
+                });
+                console.log(`User ${userId} status set to offline`);
+                
+                // Broadcast user status change to all connected clients
+                broadcastUserStatusChange(userId, 'offline');
+            } catch (error) {
+                console.error('Error updating user status:', error);
+            }
         });
         
-        ws.on('error', (error) => {
+        ws.on('error', async (error) => {
             console.error(`WebSocket error for user ${userId}:`, error);
             clients.delete(userId);
+            
+            // Update user status to offline on error
+            try {
+                await User.findByIdAndUpdate(userId, {
+                    'profile.status': 'offline'
+                });
+                broadcastUserStatusChange(userId, 'offline');
+            } catch (err) {
+                console.error('Error updating user status on error:', err);
+            }
         });
     }
 });
@@ -512,6 +548,22 @@ function handleWebSocketMessage(userId, data, ws) {
         default:
             console.log('Unknown message type:', data.type);
     }
+}
+
+// Broadcast user status change to all connected clients
+function broadcastUserStatusChange(userId, status) {
+    const statusMessage = {
+        type: 'user_status_change',
+        userId,
+        status
+    };
+    
+    // Send to all connected clients
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(statusMessage));
+        }
+    });
 }
 
 async function handleChallenge(fromUserId, data) {
