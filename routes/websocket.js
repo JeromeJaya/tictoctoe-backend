@@ -392,26 +392,20 @@ async function updatePlayerStats(game, isDraw = false) {
 
                 // Update ranking points
                 const opponent = game.players.find(p => p.userId.toString() !== player.userId.toString());
-                if (opponent) {
-                    const opponentUser = await User.findById(opponent.userId);
-                    const opponentPoints = opponentUser ? opponentUser.profile.rankPoints : 1200;
+                const opponentUser = opponent ? await User.findById(opponent.userId) : null;
+                const opponentPoints = opponentUser ? opponentUser.profile.rankPoints : 1200;
 
-                    user.profile.rankPoints = updateRankPoints(
-                        user.profile.rankPoints,
-                        result,
-                        opponentPoints
-                    );
-                } else {
-                    // If no opponent found, use default rating change
-                    if (result === 'win') user.profile.rankPoints += 25;
-                    else if (result === 'loss') user.profile.rankPoints -= 25;
-                }
+                user.profile.rankPoints = updateRankPoints(
+                    user.profile.rankPoints,
+                    result,
+                    opponentPoints
+                );
 
                 // Update rank title based on points
                 user.profile.rank = calculateRank(user.profile.rankPoints);
 
                 // Broadcast rank change to all connected clients
-                broadcastRankChange(user.userId, user.profile.rank, user.profile.rankPoints);
+                broadcastRankChange(user._id.toString(), user.profile.rank, user.profile.rankPoints);
 
                 // Add to game history
                 user.gameHistory.push({

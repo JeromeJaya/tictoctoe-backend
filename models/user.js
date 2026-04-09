@@ -47,16 +47,6 @@ const userSchema = new mongoose.Schema({
     }
 });
 
-// Pre-save hook to ensure rank is calculated from rankPoints
-userSchema.pre('save', function(next) {
-    if (this.profile && this.profile.rankPoints && !this.profile.rank) {
-        // Import calculateRank function
-        const { calculateRank } = require('../utils/helpers');
-        this.profile.rank = calculateRank(this.profile.rankPoints);
-    }
-    next();
-});
-
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;

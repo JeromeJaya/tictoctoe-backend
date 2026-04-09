@@ -6,7 +6,7 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const User = require('../models/user');
 const Game = require('../models/game');
-const { parseBody, sendJSON, serveFile } = require('../utils/helpers');
+const { parseBody, sendJSON, serveFile, calculateRank } = require('../utils/helpers');
 
 const frontendDir = path.join(__dirname, '..', 'frontend');
 
@@ -85,15 +85,6 @@ async function handleAPIRequest(req, res) {
                 if (!user) {
                     return sendJSON(res, 404, { error: 'User not found' });
                 }
-
-                // Ensure rank is calculated from rankPoints if not set
-                if (user.profile && user.profile.rankPoints && !user.profile.rank) {
-                    const { calculateRank } = require('../utils/helpers');
-                    user.profile.rank = calculateRank(user.profile.rankPoints);
-                    // Save the updated user with the calculated rank
-                    await user.save();
-                }
-
                 return sendJSON(res, 200, { user });
             } catch (error) {
                 return sendJSON(res, 500, { error: 'Server error' });
@@ -125,13 +116,6 @@ async function handleAPIRequest(req, res) {
                     try {
                         const friendUser = await User.findById(friendRef.userId).select('-password');
                         if (friendUser) {
-                            // Ensure rank is calculated for friend
-                            const { calculateRank } = require('../utils/helpers');
-                            if (friendUser.profile && friendUser.profile.rankPoints && !friendUser.profile.rank) {
-                                friendUser.profile.rank = calculateRank(friendUser.profile.rankPoints);
-                                await friendUser.save();
-                            }
-                            
                             populatedFriends.push({
                                 userId: friendUser,
                                 username: friendUser.username
@@ -154,18 +138,26 @@ async function handleAPIRequest(req, res) {
         else if (pathname === '/api/users' && req.method === 'GET') {
             try {
                 const users = await User.find().select('-password').limit(50);
-
-                // Ensure ranks are calculated for all users
-                const { calculateRank } = require('../utils/helpers');
-                for (const user of users) {
-                    if (user.profile && user.profile.rankPoints && !user.profile.rank) {
-                        user.profile.rank = calculateRank(user.profile.rankPoints);
-                        await user.save();
-                    }
-                }
-
                 return sendJSON(res, 200, { users });
             } catch (error) {
+                return sendJSON(res, 500, { error: 'Server error' });
+            }
+        }
+
+        // Recalculate ranks from rankPoints for all users
+        else if (pathname === '/api/recalculate-ranks' && req.method === 'POST') {
+            try {
+                const users = await User.find();
+                for (const user of users) {
+                    const points = user.profile?.rankPoints || 1000;
+                    user.profile = user.profile || {};
+                    user.profile.rankPoints = points;
+                    user.profile.rank = calculateRank(points);
+                    await user.save();
+                }
+                return sendJSON(res, 200, { message: 'Ranks recalculated for all users', count: users.length });
+            } catch (error) {
+                console.error('Error recalculating ranks:', error);
                 return sendJSON(res, 500, { error: 'Server error' });
             }
         }

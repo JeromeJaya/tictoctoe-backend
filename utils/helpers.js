@@ -107,17 +107,18 @@ function calculateRank(rankPoints) {
     return 'Legend';
 }
 
-function updateRankPoints(currentPoints, result, opponentPoints = 1200) {
+function updateRankPoints(currentPoints = 1000, result, opponentPoints = 1200) {
     // Simple ELO-like rating system
+    const current = typeof currentPoints === 'number' ? currentPoints : 1000;
     const K = 32; // K-factor for rating changes
-    const expectedScore = 1 / (1 + Math.pow(10, (opponentPoints - currentPoints) / 400));
+    const expectedScore = 1 / (1 + Math.pow(10, (opponentPoints - current) / 400));
 
     let actualScore;
     if (result === 'win') actualScore = 1;
     else if (result === 'loss') actualScore = 0;
     else actualScore = 0.5; // draw
 
-    const newPoints = Math.round(currentPoints + K * (actualScore - expectedScore));
+    const newPoints = Math.round(current + K * (actualScore - expectedScore));
     return Math.max(800, newPoints); // Minimum rank points of 800
 }
 
