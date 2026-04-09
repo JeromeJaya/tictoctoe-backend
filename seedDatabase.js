@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { calculateRank } = require('./utils/helpers');
 require('dotenv').config();
 
 // MongoDB Atlas Connection
@@ -24,6 +25,7 @@ const userSchema = new mongoose.Schema({
     },
     profile: {
         rank: String,
+        rankPoints: { type: Number, default: 1000 }, // Starting ELO-like rating
         avatar: String,
         status: {
             type: String,
@@ -64,7 +66,7 @@ const fakeUsers = [
     {
         username: 'ProGamer2024',
         password: 'password123',
-        profile: { rank: '#1', avatar: 'https://i.pravatar.cc/150?img=1', status: 'online' },
+        profile: { rankPoints: 1800, avatar: 'https://i.pravatar.cc/150?img=1', status: 'online' },
         stats: { gamesPlayed: 450, gamesWon: 380, winRate: '84%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -81,7 +83,7 @@ const fakeUsers = [
     {
         username: 'NightHawk',
         password: 'password123',
-        profile: { rank: '#5', avatar: 'https://i.pravatar.cc/150?img=2', status: 'online' },
+        profile: { rankPoints: 1650, avatar: 'https://i.pravatar.cc/150?img=2', status: 'online' },
         stats: { gamesPlayed: 380, gamesWon: 295, winRate: '78%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -97,7 +99,7 @@ const fakeUsers = [
     {
         username: 'StormBlade',
         password: 'password123',
-        profile: { rank: '#12', avatar: 'https://i.pravatar.cc/150?img=3', status: 'online' },
+        profile: { rankPoints: 1550, avatar: 'https://i.pravatar.cc/150?img=3', status: 'online' },
         stats: { gamesPlayed: 320, gamesWon: 230, winRate: '72%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -113,7 +115,7 @@ const fakeUsers = [
     {
         username: 'ShadowFox',
         password: 'password123',
-        profile: { rank: '#18', avatar: 'https://i.pravatar.cc/150?img=4', status: 'offline' },
+        profile: { rankPoints: 1450, avatar: 'https://i.pravatar.cc/150?img=4', status: 'offline' },
         stats: { gamesPlayed: 285, gamesWon: 195, winRate: '68%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -129,7 +131,7 @@ const fakeUsers = [
     {
         username: 'ThunderStrike',
         password: 'password123',
-        profile: { rank: '#25', avatar: 'https://i.pravatar.cc/150?img=5', status: 'online' },
+        profile: { rankPoints: 1350, avatar: 'https://i.pravatar.cc/150?img=5', status: 'online' },
         stats: { gamesPlayed: 245, gamesWon: 160, winRate: '65%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -145,7 +147,7 @@ const fakeUsers = [
     {
         username: 'IceQueen',
         password: 'password123',
-        profile: { rank: '#32', avatar: 'https://i.pravatar.cc/150?img=6', status: 'online' },
+        profile: { rankPoints: 1250, avatar: 'https://i.pravatar.cc/150?img=6', status: 'online' },
         stats: { gamesPlayed: 210, gamesWon: 130, winRate: '62%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -161,7 +163,7 @@ const fakeUsers = [
     {
         username: 'FireDragon',
         password: 'password123',
-        profile: { rank: '#45', avatar: 'https://i.pravatar.cc/150?img=7', status: 'offline' },
+        profile: { rankPoints: 1150, avatar: 'https://i.pravatar.cc/150?img=7', status: 'offline' },
         stats: { gamesPlayed: 180, gamesWon: 105, winRate: '58%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -177,7 +179,7 @@ const fakeUsers = [
     {
         username: 'CyberWolf',
         password: 'password123',
-        profile: { rank: '#58', avatar: 'https://i.pravatar.cc/150?img=8', status: 'online' },
+        profile: { rankPoints: 1050, avatar: 'https://i.pravatar.cc/150?img=8', status: 'online' },
         stats: { gamesPlayed: 155, gamesWon: 85, winRate: '55%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -193,7 +195,7 @@ const fakeUsers = [
     {
         username: 'PhoenixRise',
         password: 'password123',
-        profile: { rank: '#67', avatar: 'https://i.pravatar.cc/150?img=9', status: 'offline' },
+        profile: { rankPoints: 1000, avatar: 'https://i.pravatar.cc/150?img=9', status: 'offline' },
         stats: { gamesPlayed: 140, gamesWon: 75, winRate: '54%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -209,7 +211,7 @@ const fakeUsers = [
     {
         username: 'MysticSage',
         password: 'password123',
-        profile: { rank: '#78', avatar: 'https://i.pravatar.cc/150?img=10', status: 'online' },
+        profile: { rankPoints: 950, avatar: 'https://i.pravatar.cc/150?img=10', status: 'online' },
         stats: { gamesPlayed: 125, gamesWon: 65, winRate: '52%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -225,7 +227,7 @@ const fakeUsers = [
     {
         username: 'VenomStrike',
         password: 'password123',
-        profile: { rank: '#89', avatar: 'https://i.pravatar.cc/150?img=11', status: 'online' },
+        profile: { rankPoints: 900, avatar: 'https://i.pravatar.cc/150?img=11', status: 'online' },
         stats: { gamesPlayed: 110, gamesWon: 55, winRate: '50%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -241,7 +243,7 @@ const fakeUsers = [
     {
         username: 'BlazeFury',
         password: 'password123',
-        profile: { rank: '#95', avatar: 'https://i.pravatar.cc/150?img=12', status: 'offline' },
+        profile: { rankPoints: 850, avatar: 'https://i.pravatar.cc/150?img=12', status: 'offline' },
         stats: { gamesPlayed: 98, gamesWon: 45, winRate: '46%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -257,7 +259,7 @@ const fakeUsers = [
     {
         username: 'CrystalMage',
         password: 'password123',
-        profile: { rank: '#102', avatar: 'https://i.pravatar.cc/150?img=13', status: 'online' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=13', status: 'online' },
         stats: { gamesPlayed: 85, gamesWon: 38, winRate: '45%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -273,7 +275,7 @@ const fakeUsers = [
     {
         username: 'NovaBlast',
         password: 'password123',
-        profile: { rank: '#115', avatar: 'https://i.pravatar.cc/150?img=14', status: 'offline' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=14', status: 'offline' },
         stats: { gamesPlayed: 72, gamesWon: 30, winRate: '42%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -289,7 +291,7 @@ const fakeUsers = [
     {
         username: 'FrostBite',
         password: 'password123',
-        profile: { rank: '#128', avatar: 'https://i.pravatar.cc/150?img=15', status: 'online' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=15', status: 'online' },
         stats: { gamesPlayed: 60, gamesWon: 24, winRate: '40%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -305,7 +307,7 @@ const fakeUsers = [
     {
         username: 'DarkKnight',
         password: 'password123',
-        profile: { rank: '#142', avatar: 'https://i.pravatar.cc/150?img=16', status: 'offline' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=16', status: 'offline' },
         stats: { gamesPlayed: 48, gamesWon: 18, winRate: '38%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -321,7 +323,7 @@ const fakeUsers = [
     {
         username: 'SkyHunter',
         password: 'password123',
-        profile: { rank: '#156', avatar: 'https://i.pravatar.cc/150?img=17', status: 'online' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=17', status: 'online' },
         stats: { gamesPlayed: 35, gamesWon: 12, winRate: '34%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -337,7 +339,7 @@ const fakeUsers = [
     {
         username: 'IronClad',
         password: 'password123',
-        profile: { rank: '#170', avatar: 'https://i.pravatar.cc/150?img=18', status: 'offline' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=18', status: 'offline' },
         stats: { gamesPlayed: 28, gamesWon: 9, winRate: '32%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -353,7 +355,7 @@ const fakeUsers = [
     {
         username: 'SwiftBlade',
         password: 'password123',
-        profile: { rank: '#185', avatar: 'https://i.pravatar.cc/150?img=19', status: 'online' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=19', status: 'online' },
         stats: { gamesPlayed: 20, gamesWon: 6, winRate: '30%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -369,7 +371,7 @@ const fakeUsers = [
     {
         username: 'RuneKeeper',
         password: 'password123',
-        profile: { rank: '#198', avatar: 'https://i.pravatar.cc/150?img=20', status: 'offline' },
+        profile: { rankPoints: 800, avatar: 'https://i.pravatar.cc/150?img=20', status: 'offline' },
         stats: { gamesPlayed: 15, gamesWon: 4, winRate: '27%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -399,9 +401,16 @@ async function seedDatabase() {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(userData.password, salt);
             
+            // Calculate rank title from rankPoints
+            const rankTitle = calculateRank(userData.profile.rankPoints);
+            
             usersToInsert.push({
                 ...userData,
-                password: hashedPassword
+                password: hashedPassword,
+                profile: {
+                    ...userData.profile,
+                    rank: rankTitle
+                }
             });
         }
         
