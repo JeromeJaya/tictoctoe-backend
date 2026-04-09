@@ -228,7 +228,11 @@ async function handleAPIRequest(req, res) {
             // Create new user
             const newUser = new User({
                 username,
-                password: hashedPassword
+                password: hashedPassword,
+                profile: {
+                    rank: 'Bronze', // Starting rank
+                    rankPoints: 1000 // Starting points
+                }
             });
 
             await newUser.save();

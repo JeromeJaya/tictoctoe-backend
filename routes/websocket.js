@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const User = require('../models/user');
 const Game = require('../models/game');
-const { checkWinner } = require('../utils/helpers');
+const { checkWinner, calculateRank, updateRankPoints } = require('../utils/helpers');
 
 // Store connected clients by user ID
 const clients = new Map();
@@ -113,6 +113,23 @@ function broadcastUserStatusChange(userId, status) {
     wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(statusMessage));
+        }
+    });
+}
+
+// Broadcast rank change to all connected clients
+function broadcastRankChange(userId, newRank, newRankPoints) {
+    const rankMessage = {
+        type: 'rank_change',
+        userId,
+        rank: newRank,
+        rankPoints: newRankPoints
+    };
+
+    // Send to all connected clients
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(rankMessage));
         }
     });
 }
@@ -363,6 +380,8 @@ async function updatePlayerStats(game, isDraw = false) {
             if (user) {
                 user.stats.gamesPlayed += 1;
 
+                const result = isDraw ? 'draw' : (game.winner && game.winner.userId.toString() === player.userId.toString() ? 'won' : 'lost');
+
                 if (!isDraw && game.winner && game.winner.userId.toString() === player.userId.toString()) {
                     user.stats.gamesWon += 1;
                 }
@@ -371,9 +390,32 @@ async function updatePlayerStats(game, isDraw = false) {
                     Math.round((user.stats.gamesWon / user.stats.gamesPlayed) * 100) : 0;
                 user.stats.winRate = `${winRate}%`;
 
+                // Update ranking points
+                const opponent = game.players.find(p => p.userId.toString() !== player.userId.toString());
+                if (opponent) {
+                    const opponentUser = await User.findById(opponent.userId);
+                    const opponentPoints = opponentUser ? opponentUser.profile.rankPoints : 1200;
+
+                    user.profile.rankPoints = updateRankPoints(
+                        user.profile.rankPoints,
+                        result,
+                        opponentPoints
+                    );
+                } else {
+                    // If no opponent found, use default rating change
+                    if (result === 'win') user.profile.rankPoints += 25;
+                    else if (result === 'loss') user.profile.rankPoints -= 25;
+                }
+
+                // Update rank title based on points
+                user.profile.rank = calculateRank(user.profile.rankPoints);
+
+                // Broadcast rank change to all connected clients
+                broadcastRankChange(user.userId, user.profile.rank, user.profile.rankPoints);
+
                 // Add to game history
                 user.gameHistory.push({
-                    result: isDraw ? 'draw' : (game.winner && game.winner.userId.toString() === player.userId.toString() ? 'won' : 'lost'),
+                    result: result,
                     opponent: game.players.find(p => p.userId.toString() !== player.userId.toString()).username,
                     date: new Date().toISOString().split('T')[0],
                     replayId: game.gameId

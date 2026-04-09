@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema({
     },
     profile: {
         rank: String,
+        rankPoints: { type: Number, default: 1000 }, // Starting ELO-like rating
         avatar: String,
         status: {
             type: String,

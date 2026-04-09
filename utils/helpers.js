@@ -95,4 +95,30 @@ function checkWinner(board, size) {
     return null;
 }
 
-module.exports = { parseBody, sendJSON, serveFile, checkWinner };
+// Ranking system functions
+function calculateRank(rankPoints) {
+    if (rankPoints < 1100) return 'Bronze';
+    if (rankPoints < 1200) return 'Silver';
+    if (rankPoints < 1300) return 'Gold';
+    if (rankPoints < 1400) return 'Platinum';
+    if (rankPoints < 1500) return 'Diamond';
+    if (rankPoints < 1600) return 'Master';
+    if (rankPoints < 1700) return 'Grandmaster';
+    return 'Legend';
+}
+
+function updateRankPoints(currentPoints, result, opponentPoints = 1200) {
+    // Simple ELO-like rating system
+    const K = 32; // K-factor for rating changes
+    const expectedScore = 1 / (1 + Math.pow(10, (opponentPoints - currentPoints) / 400));
+
+    let actualScore;
+    if (result === 'win') actualScore = 1;
+    else if (result === 'loss') actualScore = 0;
+    else actualScore = 0.5; // draw
+
+    const newPoints = Math.round(currentPoints + K * (actualScore - expectedScore));
+    return Math.max(800, newPoints); // Minimum rank points of 800
+}
+
+module.exports = { parseBody, sendJSON, serveFile, checkWinner, calculateRank, updateRankPoints };
