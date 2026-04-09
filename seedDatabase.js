@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { calculateRank } = require('./utils/helpers');
 require('dotenv').config();
 
 // MongoDB Atlas Connection
@@ -64,7 +65,7 @@ const fakeUsers = [
     {
         username: 'ProGamer2024',
         password: 'password123',
-        profile: { rank: '#1', avatar: 'https://i.pravatar.cc/150?img=1', status: 'online' },
+        profile: { rankPoints: 1750, avatar: 'https://i.pravatar.cc/150?img=1', status: 'online' },
         stats: { gamesPlayed: 450, gamesWon: 380, winRate: '84%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -81,7 +82,7 @@ const fakeUsers = [
     {
         username: 'NightHawk',
         password: 'password123',
-        profile: { rank: '#5', avatar: 'https://i.pravatar.cc/150?img=2', status: 'online' },
+        profile: { rankPoints: 1650, avatar: 'https://i.pravatar.cc/150?img=2', status: 'online' },
         stats: { gamesPlayed: 380, gamesWon: 295, winRate: '78%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -97,7 +98,7 @@ const fakeUsers = [
     {
         username: 'StormBlade',
         password: 'password123',
-        profile: { rank: '#12', avatar: 'https://i.pravatar.cc/150?img=3', status: 'online' },
+        profile: { rankPoints: 1550, avatar: 'https://i.pravatar.cc/150?img=3', status: 'online' },
         stats: { gamesPlayed: 320, gamesWon: 230, winRate: '72%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -113,7 +114,7 @@ const fakeUsers = [
     {
         username: 'ShadowFox',
         password: 'password123',
-        profile: { rank: '#18', avatar: 'https://i.pravatar.cc/150?img=4', status: 'offline' },
+        profile: { rankPoints: 1450, avatar: 'https://i.pravatar.cc/150?img=4', status: 'offline' },
         stats: { gamesPlayed: 285, gamesWon: 195, winRate: '68%' },
         achievements: [
             { icon: '🏆', name: 'Champion', unlocked: true },
@@ -129,7 +130,7 @@ const fakeUsers = [
     {
         username: 'ThunderStrike',
         password: 'password123',
-        profile: { rank: '#25', avatar: 'https://i.pravatar.cc/150?img=5', status: 'online' },
+        profile: { rankPoints: 1350, avatar: 'https://i.pravatar.cc/150?img=5', status: 'online' },
         stats: { gamesPlayed: 245, gamesWon: 160, winRate: '65%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -145,7 +146,7 @@ const fakeUsers = [
     {
         username: 'IceQueen',
         password: 'password123',
-        profile: { rank: '#32', avatar: 'https://i.pravatar.cc/150?img=6', status: 'online' },
+        profile: { rankPoints: 1250, avatar: 'https://i.pravatar.cc/150?img=6', status: 'online' },
         stats: { gamesPlayed: 210, gamesWon: 130, winRate: '62%' },
         achievements: [
             { icon: '🎯', name: 'First Win', unlocked: true },
@@ -399,9 +400,19 @@ async function seedDatabase() {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(userData.password, salt);
             
+            // Calculate rank from rankPoints
+            const rankPoints = userData.profile.rankPoints || 1000;
+            const rank = calculateRank(rankPoints);
+            
             usersToInsert.push({
                 ...userData,
-                password: hashedPassword
+                password: hashedPassword,
+                profile: {
+                    rank: rank,
+                    rankPoints: rankPoints,
+                    avatar: userData.profile.avatar,
+                    status: userData.profile.status
+                }
             });
         }
         
