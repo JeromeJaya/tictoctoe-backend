@@ -96,6 +96,9 @@ function handleWebSocketMessage(userId, data, ws) {
         case 'join_game':
             handleJoinGame(userId, data, ws);
             break;
+        case 'start_multi_level_game':
+            handleStartMultiLevelGame(userId, data);
+            break;
         default:
             console.log('Unknown message type:', data.type);
     }
@@ -148,7 +151,8 @@ async function handleChallenge(fromUserId, data) {
             toUserId,
             fromUsername,
             challengeId,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            gameType: 'single'
         });
 
         // Send challenge to target user
@@ -160,7 +164,8 @@ async function handleChallenge(fromUserId, data) {
                 challengerId: fromUserId,
                 challengerName: challenger.username,
                 challengerAvatar: challenger.profile?.avatar || 'https://i.pravatar.cc/40',
-                message: `${challenger.username} challenged you to a Tic Tac Toe game!`
+                message: `${challenger.username} challenged you to a Tic Tac Toe game!`,
+                gameType: 'single'
             }));
         }
 
@@ -180,7 +185,7 @@ async function handleChallenge(fromUserId, data) {
 }
 
 async function handleChallengeResponse(fromUserId, data) {
-    const { challengeId, accepted } = data;
+    const { challengeId, accepted, gameType } = data;
     const challenge = pendingChallenges.get(challengeId);
 
     if (!challenge) {
@@ -197,46 +202,13 @@ async function handleChallengeResponse(fromUserId, data) {
         try {
             // Create new game room
             const gameId = `game_${challenge.fromUserId}_${fromUserId}_${Date.now()}`;
-            const boardSize = 3; // Start with 3x3
-            const initialBoard = Array(boardSize * boardSize).fill(null);
-
-            const newGame = new Game({
-                gameId,
-                players: [
-                    { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X' },
-                    { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O' }
-                ],
-                currentBoard: initialBoard,
-                currentPlayer: 'X',
-                gameStatus: 'active',
-                boardSize
-            });
-
-            await newGame.save();
-
-            // Store game room mapping for WebSocket routing
-            gameRooms.set(gameId, {
-                gameId,
-                players: [challenge.fromUserId, fromUserId],
-                game: newGame
-            });
-
-            // Notify both players to start the game
-            const gameStartMessage = {
-                type: 'game_start',
-                gameId,
-                players: newGame.players,
-                currentBoard: newGame.currentBoard,
-                currentPlayer: newGame.currentPlayer,
-                boardSize: newGame.boardSize
-            };
-
-            if (challengerWs && challengerWs.readyState === WebSocket.OPEN) {
-                challengerWs.send(JSON.stringify(gameStartMessage));
-            }
-
-            if (responderWs && responderWs.readyState === WebSocket.OPEN) {
-                responderWs.send(JSON.stringify(gameStartMessage));
+            
+            // Check if it's a multi-level game
+            if (gameType === 'multi_level') {
+                await createMultiLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs);
+            } else {
+                // Original single level game
+                await createSingleLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs);
             }
 
         } catch (error) {
@@ -276,6 +248,148 @@ async function handleChallengeResponse(fromUserId, data) {
     }
 }
 
+// Create single level game (original)
+async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs) {
+    const boardSize = 3;
+    const initialBoard = Array(boardSize * boardSize).fill(null);
+
+    const newGame = new Game({
+        gameId,
+        players: [
+            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0 },
+            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0 }
+        ],
+        currentBoard: initialBoard,
+        currentPlayer: 'X',
+        gameStatus: 'active',
+        boardSize,
+        isMultiLevel: false
+    });
+
+    await newGame.save();
+
+    gameRooms.set(gameId, {
+        gameId,
+        players: [challenge.fromUserId, fromUserId],
+        game: newGame
+    });
+
+    const gameStartMessage = {
+        type: 'game_start',
+        gameId,
+        players: newGame.players,
+        currentBoard: newGame.currentBoard,
+        currentPlayer: newGame.currentPlayer,
+        boardSize: newGame.boardSize,
+        isMultiLevel: false
+    };
+
+    if (challengerWs && challengerWs.readyState === WebSocket.OPEN) {
+        challengerWs.send(JSON.stringify(gameStartMessage));
+    }
+
+    if (responderWs && responderWs.readyState === WebSocket.OPEN) {
+        responderWs.send(JSON.stringify(gameStartMessage));
+    }
+}
+
+// Create multi-level game with 3 levels
+async function createMultiLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs) {
+    const levels = [
+        { levelNumber: 1, boardSize: 3, board: Array(3 * 3).fill(null), currentPlayer: 'X', gameStatus: 'active' },
+        { levelNumber: 2, boardSize: 4, board: Array(4 * 4).fill(null), currentPlayer: 'X', gameStatus: 'waiting' },
+        { levelNumber: 3, boardSize: 5, board: Array(5 * 5).fill(null), currentPlayer: 'X', gameStatus: 'waiting' }
+    ];
+
+    const newGame = new Game({
+        gameId,
+        isMultiLevel: true,
+        levels: levels,
+        currentLevel: 1,
+        players: [
+            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0 },
+            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0 }
+        ],
+        currentBoard: levels[0].board,
+        currentPlayer: 'X',
+        gameStatus: 'active',
+        boardSize: 3
+    });
+
+    await newGame.save();
+
+    gameRooms.set(gameId, {
+        gameId,
+        players: [challenge.fromUserId, fromUserId],
+        game: newGame
+    });
+
+    const gameStartMessage = {
+        type: 'game_start',
+        gameId,
+        players: newGame.players,
+        currentBoard: newGame.currentBoard,
+        currentPlayer: newGame.currentPlayer,
+        boardSize: newGame.boardSize,
+        isMultiLevel: true,
+        currentLevel: 1,
+        totalLevels: 3
+    };
+
+    if (challengerWs && challengerWs.readyState === WebSocket.OPEN) {
+        challengerWs.send(JSON.stringify(gameStartMessage));
+    }
+
+    if (responderWs && responderWs.readyState === WebSocket.OPEN) {
+        responderWs.send(JSON.stringify(gameStartMessage));
+    }
+}
+
+// Handle starting a multi-level game (from challenge)
+async function handleStartMultiLevelGame(userId, data) {
+    const { toUserId, toUsername, fromUsername } = data;
+    const challengeId = `${userId}_${toUserId}_${Date.now()}`;
+
+    try {
+        const challenger = await User.findById(userId).select('username profile');
+
+        pendingChallenges.set(challengeId, {
+            fromUserId: userId,
+            toUserId: toUserId,
+            fromUsername: fromUsername || challenger.username,
+            toUsername: toUsername,
+            challengeId,
+            timestamp: Date.now(),
+            gameType: 'multi_level'
+        });
+
+        const targetWs = clients.get(toUserId);
+        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+            targetWs.send(JSON.stringify({
+                type: 'challenge_received',
+                challengeId,
+                challengerId: userId,
+                challengerName: challenger.username,
+                challengerAvatar: challenger.profile?.avatar || 'https://i.pravatar.cc/40',
+                message: `${challenger.username} challenged you to a 3-Level Battle!`,
+                gameType: 'multi_level'
+            }));
+        }
+
+        const senderWs = clients.get(userId);
+        if (senderWs && senderWs.readyState === WebSocket.OPEN) {
+            senderWs.send(JSON.stringify({
+                type: 'challenge_sent',
+                challengeId,
+                toUserId: toUserId,
+                message: `Multi-Level Challenge sent to ${toUsername}!`
+            }));
+        }
+    } catch (error) {
+        console.error('Error handling multi-level challenge:', error);
+    }
+}
+
 // Handle game moves
 async function handleGameMove(userId, data) {
     const { gameId, position } = data;
@@ -300,45 +414,330 @@ async function handleGameMove(userId, data) {
             return;
         }
 
-        // Validate move
-        if (game.currentPlayer !== player.symbol) {
-            console.error('Not player\'s turn:', player.symbol, 'current:', game.currentPlayer);
-            return;
+        // Check if it's a multi-level game
+        if (game.isMultiLevel) {
+            await handleMultiLevelMove(game, gameRoom, player, userId, position);
+        } else {
+            await handleSingleLevelMove(game, gameRoom, player, userId, position);
         }
 
-        if (position < 0 || position >= game.currentBoard.length || game.currentBoard[position] !== null) {
-            console.error('Invalid move position:', position);
-            return;
+    } catch (error) {
+        console.error('Error handling game move:', error);
+    }
+}
+
+// Handle single level game move (original logic)
+async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
+    const currentBoard = game.currentBoard;
+    const boardSize = game.boardSize;
+
+    // Validate move
+    if (game.currentPlayer !== player.symbol) {
+        console.error('Not player\'s turn:', player.symbol, 'current:', game.currentPlayer);
+        return;
+    }
+
+    if (position < 0 || position >= currentBoard.length || currentBoard[position] !== null) {
+        console.error('Invalid move position:', position);
+        return;
+    }
+
+    // Make the move
+    currentBoard[position] = player.symbol;
+    game.moves.push({
+        playerId: userId,
+        playerSymbol: player.symbol,
+        position: position
+    });
+
+    // Check for winner
+    const winner = checkWinner(currentBoard, boardSize);
+    if (winner) {
+        game.gameStatus = 'finished';
+        game.winner = {
+            userId: player.userId,
+            username: player.username,
+            symbol: player.symbol
+        };
+
+        // Update player stats
+        await updatePlayerStats(game);
+    } else if (!currentBoard.includes(null)) {
+        // Draw
+        game.gameStatus = 'finished';
+        await updatePlayerStats(game, true); // true for draw
+    } else {
+        // Switch turns
+        game.currentPlayer = game.currentPlayer === 'X' ? 'O' : 'X';
+    }
+
+    game.updatedAt = new Date();
+    await game.save();
+
+    // Update game room
+    gameRoom.game = game;
+
+    // Broadcast move to both players
+    const moveMessage = {
+        type: 'game_move',
+        gameId: game.gameId,
+        playerId: userId,
+        playerSymbol: player.symbol,
+        position,
+        currentBoard: game.currentBoard,
+        currentPlayer: game.currentPlayer,
+        gameStatus: game.gameStatus,
+        winner: game.winner
+    };
+
+    // Send to both players
+    gameRoom.players.forEach(playerId => {
+        const playerWs = clients.get(playerId);
+        if (playerWs && playerWs.readyState === WebSocket.OPEN) {
+            playerWs.send(JSON.stringify(moveMessage));
+        }
+    });
+}
+
+// Handle multi-level game move
+async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
+    const currentLevel = game.currentLevel;
+    const levelIndex = currentLevel - 1;
+    const currentLevelData = game.levels[levelIndex];
+    
+    if (!currentLevelData) {
+        console.error('Level data not found for level:', currentLevel);
+        return;
+    }
+
+    const currentBoard = currentLevelData.board;
+    const boardSize = currentLevelData.boardSize;
+
+    // Validate move
+    if (currentLevelData.currentPlayer !== player.symbol) {
+        console.error('Not player\'s turn:', player.symbol, 'current:', currentLevelData.currentPlayer);
+        return;
+    }
+
+    if (position < 0 || position >= currentBoard.length || currentBoard[position] !== null) {
+        console.error('Invalid move position:', position);
+        return;
+    }
+
+    // Make the move
+    currentBoard[position] = player.symbol;
+    game.moves.push({
+        playerId: userId,
+        playerSymbol: player.symbol,
+        position: position,
+        levelNumber: currentLevel
+    });
+
+    // Check for winner at current level
+    const winner = checkWinner(currentBoard, boardSize);
+    let levelFinished = false;
+    let levelWinner = null;
+
+    if (winner) {
+        levelFinished = true;
+        levelWinner = player;
+        
+        // Update player's levels won count
+        const playerIndex = game.players.findIndex(p => p.userId.toString() === userId);
+        if (playerIndex !== -1) {
+            game.players[playerIndex].levelsWon += 1;
         }
 
-        // Make the move
-        game.currentBoard[position] = player.symbol;
-        game.moves.push({
-            playerId: userId,
-            playerSymbol: player.symbol,
-            position: position
-        });
+        // Mark level as finished
+        currentLevelData.gameStatus = 'finished';
+        currentLevelData.winner = {
+            userId: player.userId,
+            username: player.username,
+            symbol: player.symbol
+        };
 
-        // Check for winner
-        const winner = checkWinner(game.currentBoard, game.boardSize);
-        if (winner) {
+        console.log(`Player ${player.username} won level ${currentLevel}!`);
+    } else if (!currentBoard.includes(null)) {
+        // Draw at this level - move to next level
+        levelFinished = true;
+        levelWinner = null;
+        currentLevelData.gameStatus = 'finished';
+        console.log(`Level ${currentLevel} ended in a draw! Moving to next level.`);
+    }
+
+    if (levelFinished) {
+        // Check if same player won first two levels (automatic win)
+        const player1WonLevel1 = game.levels[0]?.winner?.userId?.toString() === game.players[0].userId.toString();
+        const player2WonLevel1 = game.levels[0]?.winner?.userId?.toString() === game.players[1].userId.toString();
+        const player1WonLevel2 = game.levels[1]?.winner?.userId?.toString() === game.players[0].userId.toString();
+        const player2WonLevel2 = game.levels[1]?.winner?.userId?.toString() === game.players[1].userId.toString();
+
+        // Determine overall winner if same player won first two levels
+        let overallWinner = null;
+        
+        if (currentLevel === 1 && winner) {
+            // Store level 1 winner for checking in next level
+        } else if (currentLevel === 2 && winner) {
+            // Check if player won both level 1 and level 2
+            if ((player1WonLevel1 && player1WonLevel2) || (player2WonLevel1 && player2WonLevel2)) {
+                overallWinner = winner;
+            }
+        } else if (currentLevel === 2 && !winner) {
+            // Draw in level 2 - need to play level 3
+        } else if (currentLevel === 3) {
+            // Final level - determine winner by majority
+            const player1LevelsWon = game.players[0].levelsWon;
+            const player2LevelsWon = game.players[1].levelsWon;
+            
+            if (player1LevelsWon > player2LevelsWon) {
+                overallWinner = game.players[0];
+            } else if (player2LevelsWon > player1LevelsWon) {
+                overallWinner = game.players[1];
+            }
+            // If equal, last level winner wins
+            if (!overallWinner && winner) {
+                overallWinner = winner;
+            }
+        }
+
+        if (overallWinner) {
+            // Game over - overall winner determined
             game.gameStatus = 'finished';
             game.winner = {
-                userId: player.userId,
-                username: player.username,
-                symbol: player.symbol
+                userId: overallWinner.userId,
+                username: overallWinner.username,
+                symbol: overallWinner.symbol,
+                isMultiLevelWinner: true,
+                levelsWon: overallWinner.levelsWon
             };
+
+            game.updatedAt = new Date();
+            await game.save();
 
             // Update player stats
             await updatePlayerStats(game);
-        } else if (!game.currentBoard.includes(null)) {
-            // Draw
-            game.gameStatus = 'finished';
-            await updatePlayerStats(game, true); // true for draw
-        } else {
-            // Switch turns
-            game.currentPlayer = game.currentPlayer === 'X' ? 'O' : 'X';
+
+            // Broadcast final result to both players
+            const finalResultMessage = {
+                type: 'game_move',
+                gameId: game.gameId,
+                playerId: userId,
+                playerSymbol: player.symbol,
+                position,
+                currentBoard: game.currentBoard,
+                currentPlayer: game.currentPlayer,
+                gameStatus: game.gameStatus,
+                winner: game.winner,
+                isMultiLevelWinner: true,
+                levelsWon: game.players.map(p => ({ username: p.username, levelsWon: p.levelsWon })),
+                message: `🏆 ${overallWinner.username} wins the Multi-Level Battle!`
+            };
+
+            gameRoom.players.forEach(playerId => {
+                const playerWs = clients.get(playerId);
+                if (playerWs && playerWs.readyState === WebSocket.OPEN) {
+                    playerWs.send(JSON.stringify(finalResultMessage));
+                }
+            });
+            return;
         }
+
+        // Move to next level if available
+        if (currentLevel < 3) {
+            const nextLevelIndex = currentLevel;
+            const nextLevel = game.levels[nextLevelIndex];
+            
+            game.currentLevel = currentLevel + 1;
+            game.currentBoard = nextLevel.board;
+            game.currentPlayer = 'X'; // Reset to X for new level
+            game.boardSize = nextLevel.boardSize;
+            nextLevel.gameStatus = 'active';
+            nextLevel.currentPlayer = 'X';
+
+            game.updatedAt = new Date();
+            await game.save();
+
+            // Update game room
+            gameRoom.game = game;
+
+            // Broadcast level transition
+            const levelTransitionMessage = {
+                type: 'level_transition',
+                gameId: game.gameId,
+                currentLevel: game.currentLevel,
+                boardSize: nextLevel.boardSize,
+                currentBoard: nextLevel.board,
+                currentPlayer: 'X',
+                previousLevelWinner: winner ? player.username : null,
+                levelsWon: game.players.map(p => ({ username: p.username, levelsWon: p.levelsWon })),
+                message: winner 
+                    ? `🎉 ${player.username} won Level ${currentLevel}! Get ready for Level ${currentLevel + 1}...`
+                    : `🤝 Level ${currentLevel} draw! Moving to Level ${currentLevel + 1}...`
+            };
+
+            gameRoom.players.forEach(playerId => {
+                const playerWs = clients.get(playerId);
+                if (playerWs && playerWs.readyState === WebSocket.OPEN) {
+                    playerWs.send(JSON.stringify(levelTransitionMessage));
+                }
+            });
+        } else {
+            // All levels finished - determine final winner by majority
+            const player1LevelsWon = game.players[0].levelsWon;
+            const player2LevelsWon = game.players[1].levelsWon;
+            
+            let finalWinner = null;
+            if (player1LevelsWon > player2LevelsWon) {
+                finalWinner = game.players[0];
+            } else if (player2LevelsWon > player1LevelsWon) {
+                finalWinner = game.players[1];
+            } else if (levelWinner) {
+                // Tie-breaker: last level winner
+                finalWinner = levelWinner;
+            }
+
+            game.gameStatus = 'finished';
+            game.winner = {
+                userId: finalWinner.userId,
+                username: finalWinner.username,
+                symbol: finalWinner.symbol,
+                isMultiLevelWinner: true,
+                levelsWon: finalWinner.levelsWon
+            };
+
+            game.updatedAt = new Date();
+            await game.save();
+
+            // Update player stats
+            await updatePlayerStats(game);
+
+            // Broadcast final result
+            const finalResultMessage = {
+                type: 'game_move',
+                gameId: game.gameId,
+                playerId: userId,
+                playerSymbol: player.symbol,
+                position,
+                currentBoard: game.currentBoard,
+                currentPlayer: game.currentPlayer,
+                gameStatus: game.gameStatus,
+                winner: game.winner,
+                isMultiLevelWinner: true,
+                levelsWon: game.players.map(p => ({ username: p.username, levelsWon: p.levelsWon })),
+                message: `🏆 ${finalWinner.username} wins the Multi-Level Battle with ${finalWinner.levelsWon} levels!`
+            };
+
+            gameRoom.players.forEach(playerId => {
+                const playerWs = clients.get(playerId);
+                if (playerWs && playerWs.readyState === WebSocket.OPEN) {
+                    playerWs.send(JSON.stringify(finalResultMessage));
+                }
+            });
+        }
+    } else {
+        // Continue current level - switch turns
+        currentLevelData.currentPlayer = currentLevelData.currentPlayer === 'X' ? 'O' : 'X';
+        game.currentPlayer = currentLevelData.currentPlayer;
 
         game.updatedAt = new Date();
         await game.save();
@@ -349,18 +748,25 @@ async function handleGameMove(userId, data) {
         // Broadcast move to both players
         const moveMessage = {
             type: 'game_move',
-            gameId,
+            gameId: game.gameId,
             playerId: userId,
             playerSymbol: player.symbol,
             position,
-            currentBoard: game.currentBoard,
-            currentPlayer: game.currentPlayer,
-            gameStatus: game.gameStatus,
-            winner: game.winner
+            currentBoard: currentBoard,
+            currentPlayer: currentLevelData.currentPlayer,
+            gameStatus: 'active',
+            currentLevel: game.currentLevel,
+            boardSize: boardSize
         };
 
-        // Send to both players
         gameRoom.players.forEach(playerId => {
+            const playerWs = clients.get(playerId);
+            if (playerWs && playerWs.readyState === WebSocket.OPEN) {
+                playerWs.send(JSON.stringify(moveMessage));
+            }
+        });
+    }
+}
             const playerWs = clients.get(playerId);
             if (playerWs && playerWs.readyState === WebSocket.OPEN) {
                 playerWs.send(JSON.stringify(moveMessage));
@@ -457,17 +863,40 @@ async function handleJoinGame(userId, data, ws) {
             });
         }
 
-        // Send game start message
-        const gameStartMessage = {
-            type: 'game_start',
-            gameId: game.gameId,
-            players: game.players,
-            currentBoard: game.currentBoard,
-            currentPlayer: game.currentPlayer,
-            boardSize: game.boardSize
-        };
+        // Check if it's a multi-level game
+        if (game.isMultiLevel) {
+            const currentLevel = game.currentLevel;
+            const levelData = game.levels[currentLevel - 1];
+            
+            const gameStartMessage = {
+                type: 'game_start',
+                gameId: game.gameId,
+                players: game.players,
+                currentBoard: levelData.board,
+                currentPlayer: levelData.currentPlayer,
+                boardSize: levelData.boardSize,
+                isMultiLevel: true,
+                currentLevel: currentLevel,
+                totalLevels: 3,
+                levelsWon: game.players.map(p => ({ username: p.username, levelsWon: p.levelsWon }))
+            };
 
-        ws.send(JSON.stringify(gameStartMessage));
+            ws.send(JSON.stringify(gameStartMessage));
+        } else {
+            // Single level game
+            const gameStartMessage = {
+                type: 'game_start',
+                gameId: game.gameId,
+                players: game.players,
+                currentBoard: game.currentBoard,
+                currentPlayer: game.currentPlayer,
+                boardSize: game.boardSize,
+                isMultiLevel: false
+            };
+
+            ws.send(JSON.stringify(gameStartMessage));
+        }
+
         console.log(`User ${userId} joined game ${gameId}`);
 
     } catch (error) {
