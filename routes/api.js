@@ -11,11 +11,16 @@ const { parseBody, sendJSON, serveFile } = require('../utils/helpers');
 const frontendDir = path.join(__dirname, '..', 'frontend');
 
 // Configure Cloudinary
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
+if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+    console.log('✅ Cloudinary configured');
+} else {
+    console.log('⚠️ Cloudinary not configured - profile image uploads will fail');
+}
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -297,6 +302,11 @@ async function handleAPIRequest(req, res) {
                 }
 
                 try {
+                    // Check if Cloudinary is configured
+                    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+                        return sendJSON(res, 500, { error: 'Image upload service not configured. Please set up Cloudinary credentials.' });
+                    }
+
                     // Upload to Cloudinary
                     const result = await new Promise((resolve, reject) => {
                         const uploadStream = cloudinary.uploader.upload_stream(
@@ -309,8 +319,12 @@ async function handleAPIRequest(req, res) {
                                 ]
                             },
                             (error, result) => {
-                                if (error) reject(error);
-                                else resolve(result);
+                                if (error) {
+                                    console.error('Cloudinary upload error:', error);
+                                    reject(error);
+                                } else {
+                                    resolve(result);
+                                }
                             }
                         );
                         uploadStream.end(req.file.buffer);
@@ -334,7 +348,7 @@ async function handleAPIRequest(req, res) {
 
                 } catch (error) {
                     console.error('Error uploading image:', error);
-                    return sendJSON(res, 500, { error: 'Failed to upload image' });
+                    return sendJSON(res, 500, { error: `Failed to upload image: ${error.message}` });
                 }
             });
             return; // Important: return here to prevent further processing
