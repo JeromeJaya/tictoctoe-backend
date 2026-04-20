@@ -517,15 +517,10 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
     // For first move, timeTaken is 0 (no waiting time before first move)
     let timeTaken = 0;
     if (lastMove) {
-        // Find the last move made by this player
-        const playerMoves = game.moves.filter(m => m.playerId === userId);
-        if (playerMoves.length > 0) {
-            // This is not the player's first move, calculate time since their last move
-            const playerLastMove = playerMoves[playerMoves.length - 1];
-            timeTaken = moveTimestamp - new Date(playerLastMove.timestamp).getTime();
-        }
-        // If playerMoves.length === 0, this is their first move, timeTaken stays 0
+        // Calculate time from the last move (by opponent) to this move
+        timeTaken = moveTimestamp - new Date(lastMove.timestamp).getTime();
     }
+    // If no lastMove (this is the very first move of the game), timeTaken stays 0
     
     // Make the move
     currentBoard[position] = player.symbol;
@@ -666,15 +661,10 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
     // For first move, timeTaken is 0 (no waiting time before first move)
     let timeTaken = 0;
     if (lastMove) {
-        // Find the last move made by this player
-        const playerMoves = game.moves.filter(m => m.playerId === userId);
-        if (playerMoves.length > 0) {
-            // This is not the player's first move, calculate time since their last move
-            const playerLastMove = playerMoves[playerMoves.length - 1];
-            timeTaken = moveTimestamp - new Date(playerLastMove.timestamp).getTime();
-        }
-        // If playerMoves.length === 0, this is their first move, timeTaken stays 0
+        // Calculate time from the last move (by opponent) to this move
+        timeTaken = moveTimestamp - new Date(lastMove.timestamp).getTime();
     }
+    // If no lastMove (this is the very first move of the game), timeTaken stays 0
 
     // Make the move
     currentBoard[position] = player.symbol;
