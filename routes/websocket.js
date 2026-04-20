@@ -512,7 +512,20 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
     // Calculate time taken for this move
     const moveTimestamp = Date.now();
     const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
-    const timeTaken = lastMove ? moveTimestamp - new Date(lastMove.timestamp).getTime() : 0;
+    
+    // Only count time if this is not the player's first move
+    // For first move, timeTaken is 0 (no waiting time before first move)
+    let timeTaken = 0;
+    if (lastMove) {
+        // Find the last move made by this player
+        const playerMoves = game.moves.filter(m => m.playerId === userId);
+        if (playerMoves.length > 0) {
+            // This is not the player's first move, calculate time since their last move
+            const playerLastMove = playerMoves[playerMoves.length - 1];
+            timeTaken = moveTimestamp - new Date(playerLastMove.timestamp).getTime();
+        }
+        // If playerMoves.length === 0, this is their first move, timeTaken stays 0
+    }
     
     // Make the move
     currentBoard[position] = player.symbol;
@@ -648,7 +661,20 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
     // Calculate time taken for this move
     const moveTimestamp = Date.now();
     const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
-    const timeTaken = lastMove ? moveTimestamp - new Date(lastMove.timestamp).getTime() : 0;
+    
+    // Only count time if this is not the player's first move
+    // For first move, timeTaken is 0 (no waiting time before first move)
+    let timeTaken = 0;
+    if (lastMove) {
+        // Find the last move made by this player
+        const playerMoves = game.moves.filter(m => m.playerId === userId);
+        if (playerMoves.length > 0) {
+            // This is not the player's first move, calculate time since their last move
+            const playerLastMove = playerMoves[playerMoves.length - 1];
+            timeTaken = moveTimestamp - new Date(playerLastMove.timestamp).getTime();
+        }
+        // If playerMoves.length === 0, this is their first move, timeTaken stays 0
+    }
 
     // Make the move
     currentBoard[position] = player.symbol;
