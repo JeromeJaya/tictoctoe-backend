@@ -922,16 +922,6 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
         });
     }
 }
-            const playerWs = clients.get(playerId);
-            if (playerWs && playerWs.readyState === WebSocket.OPEN) {
-                playerWs.send(JSON.stringify(moveMessage));
-            }
-        });
-
-    } catch (error) {
-        console.error('Error handling game move:', error);
-    }
-}
 
 // Update player stats after game ends
 async function updatePlayerStats(game, isDraw = false, timeBasedWinnerId = null) {
