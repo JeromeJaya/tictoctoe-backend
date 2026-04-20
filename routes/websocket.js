@@ -547,6 +547,7 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
         
         const player1Time = game.players[0].totalTimeTaken || 0;
         const player2Time = game.players[1].totalTimeTaken || 0;
+        const timeDifference = Math.abs(player1Time - player2Time);
         
         // Player with less time wins
         if (player1Time < player2Time) {
@@ -556,9 +557,11 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
                 username: game.players[0].username,
                 symbol: game.players[0].symbol,
                 wonByTime: true,
-                timeTaken: player1Time
+                timeTaken: player1Time,
+                opponentTime: player2Time,
+                timeDifference: timeDifference
             };
-            console.log(`Draw! Player ${game.players[0].username} wins by time (${player1Time}ms vs ${player2Time}ms)`);
+            console.log(`Draw! Player ${game.players[0].username} wins by time (${player1Time}ms vs ${player2Time}ms, diff: ${timeDifference}ms)`);
             await updatePlayerStats(game, false, game.players[0].userId);
         } else if (player2Time < player1Time) {
             // Player 2 wins by time
@@ -567,9 +570,11 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
                 username: game.players[1].username,
                 symbol: game.players[1].symbol,
                 wonByTime: true,
-                timeTaken: player2Time
+                timeTaken: player2Time,
+                opponentTime: player1Time,
+                timeDifference: timeDifference
             };
-            console.log(`Draw! Player ${game.players[1].username} wins by time (${player2Time}ms vs ${player1Time}ms)`);
+            console.log(`Draw! Player ${game.players[1].username} wins by time (${player2Time}ms vs ${player1Time}ms, diff: ${timeDifference}ms)`);
             await updatePlayerStats(game, false, game.players[1].userId);
         } else {
             // True draw - same time
