@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
+// Cache for checkWinner results using Map (board state -> winner)
+const winnerCache = new Map();
+
 // Helper function to parse request body
 function parseBody(req) {
     return new Promise((resolve, reject) => {
@@ -48,6 +51,14 @@ function serveFile(res, filePath, contentType) {
 
 // Helper function to check winner
 function checkWinner(board, size) {
+    // Create cache key from board state
+    const cacheKey = board.join(',') + '_' + size;
+    
+    // Check cache first
+    if (winnerCache.has(cacheKey)) {
+        return winnerCache.get(cacheKey);
+    }
+    
     // Check rows
     for (let r = 0; r < size; r++) {
         let rowWin = true;
@@ -92,7 +103,14 @@ function checkWinner(board, size) {
     }
     if (diag2 && board[size - 1]) return board[size - 1];
 
-    return null;
+    const result = null;
+    
+    // Cache the result (limit cache size to 1000 entries)
+    if (winnerCache.size < 1000) {
+        winnerCache.set(cacheKey, result);
+    }
+    
+    return result;
 }
 
 // Ranking system functions
@@ -122,4 +140,9 @@ function updateRankPoints(currentPoints = 1000, result, opponentPoints = 1200) {
     return Math.max(800, newPoints); // Minimum rank points of 800
 }
 
-module.exports = { parseBody, sendJSON, serveFile, checkWinner, calculateRank, updateRankPoints };
+module.exports = { parseBody, sendJSON, serveFile, checkWinner, calculateRank, updateRankPoints, clearWinnerCache };
+
+// Helper function to clear winner cache
+function clearWinnerCache() {
+    winnerCache.clear();
+}

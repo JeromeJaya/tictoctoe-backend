@@ -424,19 +424,22 @@ async function seedDatabase() {
         for (let i = 0; i < insertedUsers.length; i++) {
             const randomFriends = [];
             const friendCount = Math.floor(Math.random() * 5) + 3; // 3-7 friends
-            
+            const usedIndices = new Set([i]); // Track used indices to prevent duplicates
+
             for (let j = 0; j < friendCount; j++) {
                 let randomIndex;
                 do {
                     randomIndex = Math.floor(Math.random() * insertedUsers.length);
-                } while (randomIndex === i || randomFriends.includes(insertedUsers[randomIndex]._id));
+                } while (usedIndices.has(randomIndex));
+                
+                usedIndices.add(randomIndex);
                 
                 randomFriends.push({
                     userId: insertedUsers[randomIndex]._id,
                     username: insertedUsers[randomIndex].username
                 });
             }
-            
+
             await User.findByIdAndUpdate(insertedUsers[i]._id, {
                 friends: randomFriends
             });

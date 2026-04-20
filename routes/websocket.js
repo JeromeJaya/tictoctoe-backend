@@ -3,14 +3,26 @@ const User = require('../models/user');
 const Game = require('../models/game');
 const { checkWinner, calculateRank, updateRankPoints } = require('../utils/helpers');
 
-// Store connected clients by user ID
+// Store connected clients by user ID (Map - already in use)
 const clients = new Map();
 
-// Challenge storage (in production, use Redis or database)
+// Challenge storage (in production, use Redis or database) (Map - already in use)
 const pendingChallenges = new Map();
 
-// Active game rooms
+// Active game rooms (Map - already in use)
 const gameRooms = new Map();
+
+// Track online users for quick lookup (Set - NEW)
+const onlineUsers = new Set();
+
+// Track pending challenge pairs to prevent duplicates (Set - NEW)
+const pendingChallengePairs = new Set();
+
+// Store WebSocket private metadata (WeakMap - NEW)
+const wsPrivateData = new WeakMap();
+
+// Track active game session objects (WeakSet - NEW)
+const activeGameSessions = new WeakSet();
 
 function setupWebSocket(server) {
     const wss = new WebSocket.Server({ server });
@@ -20,6 +32,17 @@ function setupWebSocket(server) {
 
         if (userId) {
             clients.set(userId, ws);
+            onlineUsers.add(userId); // Track online user
+            
+            // Store private WebSocket metadata using WeakMap
+            wsPrivateData.set(ws, {
+                userId,
+                connectedAt: Date.now(),
+                messageCount: 0,
+                lastActivity: Date.now(),
+                gamesPlayed: 0
+            });
+            
             console.log(`User ${userId} connected via WebSocket`);
 
             // Update user status to online in database
@@ -37,6 +60,14 @@ function setupWebSocket(server) {
 
             ws.on('message', (message) => {
                 try {
+                    // Update message count and last activity
+                    const privateData = wsPrivateData.get(ws);
+                    if (privateData) {
+                        privateData.messageCount++;
+                        privateData.lastActivity = Date.now();
+                        wsPrivateData.set(ws, privateData);
+                    }
+                    
                     const data = JSON.parse(message.toString());
                     handleWebSocketMessage(userId, data, ws);
                 } catch (error) {
@@ -46,6 +77,7 @@ function setupWebSocket(server) {
 
             ws.on('close', async () => {
                 clients.delete(userId);
+                onlineUsers.delete(userId); // Remove from online users
                 console.log(`User ${userId} disconnected`);
 
                 // Update user status to offline in database
@@ -65,6 +97,7 @@ function setupWebSocket(server) {
             ws.on('error', async (error) => {
                 console.error(`WebSocket error for user ${userId}:`, error);
                 clients.delete(userId);
+                onlineUsers.delete(userId); // Remove from online users
 
                 // Update user status to offline on error
                 try {
@@ -139,6 +172,20 @@ function broadcastRankChange(userId, newRank, newRankPoints) {
 
 async function handleChallenge(fromUserId, data) {
     const { toUserId, fromUsername } = data;
+    const challengeKey = `${fromUserId}_${toUserId}`;
+    
+    // Prevent duplicate challenges using Set
+    if (pendingChallengePairs.has(challengeKey)) {
+        const senderWs = clients.get(fromUserId);
+        if (senderWs && senderWs.readyState === WebSocket.OPEN) {
+            senderWs.send(JSON.stringify({
+                type: 'challenge_error',
+                message: 'You already have a pending challenge with this user!'
+            }));
+        }
+        return;
+    }
+    
     const challengeId = `${fromUserId}_${toUserId}_${Date.now()}`;
 
     try {
@@ -154,6 +201,9 @@ async function handleChallenge(fromUserId, data) {
             timestamp: Date.now(),
             gameType: 'single'
         });
+        
+        // Track challenge pair to prevent duplicates
+        pendingChallengePairs.add(challengeKey);
 
         // Send challenge to target user
         const targetWs = clients.get(toUserId);
@@ -181,6 +231,7 @@ async function handleChallenge(fromUserId, data) {
         }
     } catch (error) {
         console.error('Error handling challenge:', error);
+        pendingChallengePairs.delete(challengeKey); // Clean up on error
     }
 }
 
@@ -194,6 +245,10 @@ async function handleChallengeResponse(fromUserId, data) {
 
     // Remove pending challenge
     pendingChallenges.delete(challengeId);
+    
+    // Remove challenge pair from Set to allow future challenges
+    const challengeKey = `${challenge.fromUserId}_${challenge.toUserId}`;
+    pendingChallengePairs.delete(challengeKey);
 
     const challengerWs = clients.get(challenge.fromUserId);
     const responderWs = clients.get(fromUserId);
@@ -268,11 +323,17 @@ async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs
 
     await newGame.save();
 
-    gameRooms.set(gameId, {
+    const gameRoom = {
         gameId,
         players: [challenge.fromUserId, fromUserId],
-        game: newGame
-    });
+        game: newGame,
+        createdAt: Date.now()
+    };
+    
+    // Track game session using WeakSet
+    activeGameSessions.add(gameRoom);
+    
+    gameRooms.set(gameId, gameRoom);
 
     const gameStartMessage = {
         type: 'game_start',
@@ -318,11 +379,17 @@ async function createMultiLevelGame(gameId, challenge, fromUserId, challengerWs,
 
     await newGame.save();
 
-    gameRooms.set(gameId, {
+    const gameRoom = {
         gameId,
         players: [challenge.fromUserId, fromUserId],
-        game: newGame
-    });
+        game: newGame,
+        createdAt: Date.now()
+    };
+    
+    // Track game session using WeakSet
+    activeGameSessions.add(gameRoom);
+    
+    gameRooms.set(gameId, gameRoom);
 
     const gameStartMessage = {
         type: 'game_start',
@@ -909,3 +976,59 @@ async function handleJoinGame(userId, data, ws) {
 }
 
 module.exports = { setupWebSocket };
+
+// Helper function to check if user is online (using Set)
+function isUserOnline(userId) {
+    return onlineUsers.has(userId);
+}
+
+// Helper function to get all online users (using Set)
+function getOnlineUsers() {
+    return Array.from(onlineUsers);
+}
+
+// Helper function to get WebSocket metadata (using WeakMap)
+function getWebSocketMetadata(ws) {
+    return wsPrivateData.get(ws);
+}
+
+// Helper function to cleanup expired challenges (using Set and Map)
+function cleanupExpiredChallenges() {
+    const now = Date.now();
+    const expiredIds = [];
+    
+    pendingChallenges.forEach((challenge, id) => {
+        if (now - challenge.timestamp > 30000) { // 30 seconds expiry
+            expiredIds.push(id);
+            const challengeKey = `${challenge.fromUserId}_${challenge.toUserId}`;
+            pendingChallengePairs.delete(challengeKey);
+        }
+    });
+    
+    expiredIds.forEach(id => pendingChallenges.delete(id));
+    
+    if (expiredIds.length > 0) {
+        console.log(`Cleaned up ${expiredIds.length} expired challenges`);
+    }
+}
+
+// Helper function to get active game stats (using WeakSet and Map)
+function getActiveGameStats() {
+    const stats = {
+        totalGameRooms: gameRooms.size,
+        activeSessions: 0,
+        totalPlayers: 0
+    };
+    
+    gameRooms.forEach((room) => {
+        if (activeGameSessions.has(room)) {
+            stats.activeSessions++;
+            stats.totalPlayers += room.players.length;
+        }
+    });
+    
+    return stats;
+}
+
+// Run cleanup every 10 seconds
+setInterval(cleanupExpiredChallenges, 10000);

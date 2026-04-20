@@ -10,6 +10,12 @@ const { parseBody, sendJSON, serveFile, calculateRank } = require('../utils/help
 
 const frontendDir = path.join(__dirname, '..', 'frontend');
 
+// Track uploaded file hashes to prevent duplicates (Set)
+const uploadedFileHashes = new Set();
+
+// Track rate limit requests per IP (Map)
+const rateLimitMap = new Map();
+
 // Configure Cloudinary
 if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
     cloudinary.config({
@@ -393,3 +399,40 @@ async function handleAPIRequest(req, res) {
 }
 
 module.exports = { handleAPIRequest };
+
+// Helper function to check rate limit using Map
+function checkRateLimit(ip, maxRequests = 100, windowMs = 60000) {
+    const now = Date.now();
+    const userRequests = rateLimitMap.get(ip) || [];
+    
+    // Remove old requests outside the window
+    const recentRequests = userRequests.filter(time => now - time < windowMs);
+    
+    if (recentRequests.length >= maxRequests) {
+        return false; // Rate limit exceeded
+    }
+    
+    recentRequests.push(now);
+    rateLimitMap.set(ip, recentRequests);
+    return true;
+}
+
+// Helper function to cleanup old rate limit entries
+function cleanupRateLimitMap() {
+    const now = Date.now();
+    const ipsToRemove = [];
+    
+    rateLimitMap.forEach((requests, ip) => {
+        const recentRequests = requests.filter(time => now - time < 60000);
+        if (recentRequests.length === 0) {
+            ipsToRemove.push(ip);
+        } else {
+            rateLimitMap.set(ip, recentRequests);
+        }
+    });
+    
+    ipsToRemove.forEach(ip => rateLimitMap.delete(ip));
+}
+
+// Cleanup every minute
+setInterval(cleanupRateLimitMap, 60000);
