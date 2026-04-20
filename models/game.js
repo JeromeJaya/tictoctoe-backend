@@ -40,7 +40,8 @@ const gameSchema = new mongoose.Schema({
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         username: String,
         symbol: String,
-        levelsWon: { type: Number, default: 0 }
+        levelsWon: { type: Number, default: 0 },
+        totalTimeTaken: { type: Number, default: 0 } // Time in milliseconds
     }],
     currentBoard: {
         type: [String],
@@ -61,7 +62,8 @@ const gameSchema = new mongoose.Schema({
         username: String,
         symbol: String,
         isMultiLevelWinner: { type: Boolean, default: false },
-        levelsWon: { type: Number, default: 0 }
+        levelsWon: { type: Number, default: 0 },
+        wonByTime: { type: Boolean, default: false } // True if won by faster time in draw
     },
     moves: [{
         playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

@@ -509,13 +509,25 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
         return;
     }
 
+    // Calculate time taken for this move
+    const moveTimestamp = Date.now();
+    const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
+    const timeTaken = lastMove ? moveTimestamp - new Date(lastMove.timestamp).getTime() : 0;
+    
     // Make the move
     currentBoard[position] = player.symbol;
     game.moves.push({
         playerId: userId,
         playerSymbol: player.symbol,
-        position: position
+        position: position,
+        timestamp: new Date()
     });
+    
+    // Update player's total time taken
+    const playerIndex = game.players.findIndex(p => p.userId.toString() === userId);
+    if (playerIndex !== -1) {
+        game.players[playerIndex].totalTimeTaken = (game.players[playerIndex].totalTimeTaken || 0) + timeTaken;
+    }
 
     // Check for winner
     const winner = checkWinner(currentBoard, boardSize);
@@ -530,9 +542,40 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
         // Update player stats
         await updatePlayerStats(game);
     } else if (!currentBoard.includes(null)) {
-        // Draw
+        // Draw - determine winner by time taken
         game.gameStatus = 'finished';
-        await updatePlayerStats(game, true); // true for draw
+        
+        const player1Time = game.players[0].totalTimeTaken || 0;
+        const player2Time = game.players[1].totalTimeTaken || 0;
+        
+        // Player with less time wins
+        if (player1Time < player2Time) {
+            // Player 1 wins by time
+            game.winner = {
+                userId: game.players[0].userId,
+                username: game.players[0].username,
+                symbol: game.players[0].symbol,
+                wonByTime: true,
+                timeTaken: player1Time
+            };
+            console.log(`Draw! Player ${game.players[0].username} wins by time (${player1Time}ms vs ${player2Time}ms)`);
+            await updatePlayerStats(game, false, game.players[0].userId);
+        } else if (player2Time < player1Time) {
+            // Player 2 wins by time
+            game.winner = {
+                userId: game.players[1].userId,
+                username: game.players[1].username,
+                symbol: game.players[1].symbol,
+                wonByTime: true,
+                timeTaken: player2Time
+            };
+            console.log(`Draw! Player ${game.players[1].username} wins by time (${player2Time}ms vs ${player1Time}ms)`);
+            await updatePlayerStats(game, false, game.players[1].userId);
+        } else {
+            // True draw - same time
+            console.log(`True draw! Both players took same time (${player1Time}ms)`);
+            await updatePlayerStats(game, true); // true for draw
+        }
     } else {
         // Switch turns
         game.currentPlayer = game.currentPlayer === 'X' ? 'O' : 'X';
@@ -554,7 +597,13 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
         currentBoard: game.currentBoard,
         currentPlayer: game.currentPlayer,
         gameStatus: game.gameStatus,
-        winner: game.winner
+        winner: game.winner,
+        timeTaken: timeTaken,
+        playerTimes: game.players.map(p => ({
+            userId: p.userId,
+            username: p.username,
+            totalTimeTaken: p.totalTimeTaken || 0
+        }))
     };
 
     // Send to both players
@@ -591,14 +640,26 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
         return;
     }
 
+    // Calculate time taken for this move
+    const moveTimestamp = Date.now();
+    const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
+    const timeTaken = lastMove ? moveTimestamp - new Date(lastMove.timestamp).getTime() : 0;
+
     // Make the move
     currentBoard[position] = player.symbol;
     game.moves.push({
         playerId: userId,
         playerSymbol: player.symbol,
         position: position,
-        levelNumber: currentLevel
+        levelNumber: currentLevel,
+        timestamp: new Date()
     });
+    
+    // Update player's total time taken
+    const playerIndex = game.players.findIndex(p => p.userId.toString() === userId);
+    if (playerIndex !== -1) {
+        game.players[playerIndex].totalTimeTaken = (game.players[playerIndex].totalTimeTaken || 0) + timeTaken;
+    }
 
     // Check for winner at current level
     const winner = checkWinner(currentBoard, boardSize);
@@ -625,11 +686,38 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
 
         console.log(`Player ${player.username} won level ${currentLevel}!`);
     } else if (!currentBoard.includes(null)) {
-        // Draw at this level - move to next level
+        // Draw at this level - determine winner by time, then move to next level
         levelFinished = true;
-        levelWinner = null;
         currentLevelData.gameStatus = 'finished';
-        console.log(`Level ${currentLevel} ended in a draw! Moving to next level.`);
+        
+        const player1Time = game.players[0].totalTimeTaken || 0;
+        const player2Time = game.players[1].totalTimeTaken || 0;
+        
+        // Determine level winner by time
+        if (player1Time < player2Time) {
+            levelWinner = game.players[0];
+            currentLevelData.winner = {
+                userId: game.players[0].userId,
+                username: game.players[0].username,
+                symbol: game.players[0].symbol,
+                wonByTime: true
+            };
+            game.players[0].levelsWon += 1;
+            console.log(`Level ${currentLevel} draw! Player ${game.players[0].username} wins level by time (${player1Time}ms vs ${player2Time}ms)`);
+        } else if (player2Time < player1Time) {
+            levelWinner = game.players[1];
+            currentLevelData.winner = {
+                userId: game.players[1].userId,
+                username: game.players[1].username,
+                symbol: game.players[1].symbol,
+                wonByTime: true
+            };
+            game.players[1].levelsWon += 1;
+            console.log(`Level ${currentLevel} draw! Player ${game.players[1].username} wins level by time (${player2Time}ms vs ${player1Time}ms)`);
+        } else {
+            levelWinner = null;
+            console.log(`Level ${currentLevel} true draw! Both players took same time (${player1Time}ms)`);
+        }
     }
 
     if (levelFinished) {
@@ -846,16 +934,27 @@ async function handleMultiLevelMove(game, gameRoom, player, userId, position) {
 }
 
 // Update player stats after game ends
-async function updatePlayerStats(game, isDraw = false) {
+async function updatePlayerStats(game, isDraw = false, timeBasedWinnerId = null) {
     try {
         for (const player of game.players) {
             const user = await User.findById(player.userId);
             if (user) {
                 user.stats.gamesPlayed += 1;
 
-                const result = isDraw ? 'draw' : (game.winner && game.winner.userId.toString() === player.userId.toString() ? 'won' : 'lost');
+                // Determine result
+                let result;
+                if (timeBasedWinnerId) {
+                    // Time-based winner in what would be a draw
+                    result = player.userId.toString() === timeBasedWinnerId.toString() ? 'won' : 'lost';
+                } else {
+                    result = isDraw ? 'draw' : (game.winner && game.winner.userId.toString() === player.userId.toString() ? 'won' : 'lost');
+                }
 
                 if (!isDraw && game.winner && game.winner.userId.toString() === player.userId.toString()) {
+                    user.stats.gamesWon += 1;
+                }
+                
+                if (timeBasedWinnerId && player.userId.toString() === timeBasedWinnerId.toString()) {
                     user.stats.gamesWon += 1;
                 }
 
