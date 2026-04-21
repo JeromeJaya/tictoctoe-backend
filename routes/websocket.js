@@ -311,8 +311,8 @@ async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs
     const newGame = new Game({
         gameId,
         players: [
-            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0 },
-            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0 }
+            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0, totalTimeTaken: 0 },
+            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
         ],
         currentBoard: initialBoard,
         currentPlayer: 'X',
@@ -368,8 +368,8 @@ async function createMultiLevelGame(gameId, challenge, fromUserId, challengerWs,
         levels: levels,
         currentLevel: 1,
         players: [
-            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0 },
-            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0 }
+            { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0, totalTimeTaken: 0 },
+            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
         ],
         currentBoard: levels[0].board,
         currentPlayer: 'X',
@@ -556,6 +556,14 @@ async function handleSingleLevelMove(game, gameRoom, player, userId, position) {
         const player1Time = game.players[0].totalTimeTaken || 0;
         const player2Time = game.players[1].totalTimeTaken || 0;
         const timeDifference = Math.abs(player1Time - player2Time);
+        
+        console.log('Draw detected - Player times:', {
+            player1: game.players[0].username,
+            player1Time,
+            player2: game.players[1].username,
+            player2Time,
+            timeDifference
+        });
         
         // Player with less time wins
         if (player1Time < player2Time) {
