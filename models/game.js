@@ -63,7 +63,10 @@ const gameSchema = new mongoose.Schema({
         symbol: String,
         isMultiLevelWinner: { type: Boolean, default: false },
         levelsWon: { type: Number, default: 0 },
-        wonByTime: { type: Boolean, default: false } // True if won by faster time in draw
+        wonByTime: { type: Boolean, default: false }, // True if won by faster time in draw
+        timeTaken: { type: Number, default: 0 }, // Winner's time in milliseconds
+        opponentTime: { type: Number, default: 0 }, // Opponent's time in milliseconds
+        timeDifference: { type: Number, default: 0 } // Time difference in milliseconds
     },
     moves: [{
         playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
