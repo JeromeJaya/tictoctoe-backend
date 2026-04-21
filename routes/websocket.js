@@ -255,15 +255,19 @@ async function handleChallengeResponse(fromUserId, data) {
 
     if (accepted) {
         try {
+            // Get the responder's username from database
+            const responder = await User.findById(fromUserId).select('username');
+            const toUsername = responder ? responder.username : 'Opponent';
+            
             // Create new game room
             const gameId = `game_${challenge.fromUserId}_${fromUserId}_${Date.now()}`;
             
             // Check if it's a multi-level game
             if (gameType === 'multi_level') {
-                await createMultiLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs);
+                await createMultiLevelGame(gameId, challenge, fromUserId, toUsername, challengerWs, responderWs);
             } else {
                 // Original single level game
-                await createSingleLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs);
+                await createSingleLevelGame(gameId, challenge, fromUserId, toUsername, challengerWs, responderWs);
             }
 
         } catch (error) {
@@ -304,7 +308,7 @@ async function handleChallengeResponse(fromUserId, data) {
 }
 
 // Create single level game (original)
-async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs) {
+async function createSingleLevelGame(gameId, challenge, fromUserId, toUsername, challengerWs, responderWs) {
     const boardSize = 3;
     const initialBoard = Array(boardSize * boardSize).fill(null);
 
@@ -312,7 +316,7 @@ async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs
         gameId,
         players: [
             { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0, totalTimeTaken: 0 },
-            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
+            { userId: fromUserId, username: toUsername, symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
         ],
         currentBoard: initialBoard,
         currentPlayer: 'X',
@@ -355,7 +359,7 @@ async function createSingleLevelGame(gameId, challenge, fromUserId, challengerWs
 }
 
 // Create multi-level game with 3 levels
-async function createMultiLevelGame(gameId, challenge, fromUserId, challengerWs, responderWs) {
+async function createMultiLevelGame(gameId, challenge, fromUserId, toUsername, challengerWs, responderWs) {
     const levels = [
         { levelNumber: 1, boardSize: 3, board: Array(3 * 3).fill(null), currentPlayer: 'X', gameStatus: 'active' },
         { levelNumber: 2, boardSize: 4, board: Array(4 * 4).fill(null), currentPlayer: 'X', gameStatus: 'waiting' },
@@ -369,7 +373,7 @@ async function createMultiLevelGame(gameId, challenge, fromUserId, challengerWs,
         currentLevel: 1,
         players: [
             { userId: challenge.fromUserId, username: challenge.fromUsername, symbol: 'X', levelsWon: 0, totalTimeTaken: 0 },
-            { userId: fromUserId, username: challenge.toUsername || 'Opponent', symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
+            { userId: fromUserId, username: toUsername, symbol: 'O', levelsWon: 0, totalTimeTaken: 0 }
         ],
         currentBoard: levels[0].board,
         currentPlayer: 'X',
